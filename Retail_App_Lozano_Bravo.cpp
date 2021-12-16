@@ -1,4 +1,3 @@
-
 #define _CRT_SECURE_NO_WARNINGS
 #include <iostream>
 #include <cstring>
@@ -48,7 +47,6 @@ int mainMenu(void) {
 
     return option;
 }
-
 
 int customerLogin(Connection* conn, int customerId) {
 
@@ -113,7 +111,6 @@ double findProduct(Connection* conn, int product_id) {
     return price;
 
 }
-
 
 void displayProducts(struct ShoppingCart cart[], int productCount) {
 
@@ -181,23 +178,78 @@ int addToCart(Connection* conn, struct ShoppingCart cart[]) {
         // Keep adding items until the user hits 0 or the cart reaches the limit of 5 items
         } while (addMore && (itemsAdded < MAX_NUM_ITEMS));
     
-
     return itemsAdded;
-
 }
  
+int checkout(Connection* conn, struct ShoppingCart cart[], int customerId, int productCount) {
+    Statement* stmt = nullptr;
+    stmt = conn->createStatement();
+    char option;
+    int end = 0;
+    int orderId = 0;
+    do {
+        end = 0;
+        // Asking to checkout.
+        cout << "Would you like to checkout? (Y/y or N/n) ";
+        cin >> option;
+        cin.ignore(1000, '\n');
+        // Logic for correct answer
+        if (option != 'Y' && option != 'y' && option != 'N' && option != 'n') {
+            cout << "Wrong Input. Try again..." << endl;
+            end = 1;
+        }
+    } while (end); //Keep until right option is chosen
+    if (option == 'N' || option == 'n') {
+        cout << "The order is cancelled." << endl;
+        return 0;
+    }
+    try {
+        // Define statement and arguments
+        stmt->setSQL("BEGIN add_order(:1, :2); END;");
+
+        // Set parameters with their types
+        stmt->setInt(1, customerId);
+        stmt->registerOutParam(2, Type::OCCIINT, sizeof(orderId));
+
+        // Execute Update
+        stmt->executeUpdate();
+
+        // Save the order ID generated and returned by "add_order"
+        orderId = stmt->getInt(2);
+        conn->terminateStatement(stmt);
+
+        // Save the ordered products into "order_items" table
+        //    Add purchased items one by one to "order_items"
+        Statement* stmt = conn->createStatement();
+        for (auto i = 0; i < productCount; i++) {
+            //    Define statement and arguments
+            stmt->setSQL("BEGIN add_order_item(:1, :2, :3, :4, :5); END;");
+            //    Set parameters with their types
+            stmt->setInt(1, orderId);
+            stmt->setInt(2, i + 1);
+            stmt->setInt(3, cart[i].product_id);
+            stmt->setInt(4, cart[i].quantity);
+            stmt->setInt(5, cart[i].price);
+            //    Execute Update
+            stmt->executeUpdate();
+        }
+        conn->terminateStatement(stmt);
+
+        cout << "The order is successfully completed." << endl;
+        return 1;
+
+    }
+    catch (SQLException& sqlExcp) {
+        cout << sqlExcp.getErrorCode() << ": " << sqlExcp.getMessage();
+    }
+}
 
 
-
-int main(void)
-
-{
-
+int main(void) {
     /* OCCI Variables */
 
     Environment* env = nullptr;
     Connection* conn = nullptr;
-
 
     // Used Variables
 
@@ -215,9 +267,6 @@ int main(void)
     conn = env->createConnection(user, pass, constr);
 
     printf("Connection created\n");
-    Statement* stmt = nullptr;
-    stmt = conn->createStatement();
-
 
     ShoppingCart cart[MAX_NUM_ITEMS] = {};
     
@@ -236,7 +285,8 @@ int main(void)
 
                // Once the user is done adding items, display all the products in the cart
                displayProducts(cart, itemsAdded);
-
+               // Checkout step
+               checkout(conn, cart, custID, itemsAdded);
             }
             else {
 
